@@ -331,6 +331,10 @@ void
 MY_setErrWarnAccumulator(xmlSchemaValidCtxtPtr ctxt, go_libxml2_errwarn_accumulator *accum) {
 	xmlSchemaSetValidErrors(ctxt, MY_accumulateErr, NULL, accum);
 }
+
+static inline int MY_xmlParseInNodeContext(xmlNodePtr node, const char *data, int datalen, int options, xmlNodePtr *lst) {
+    return xmlParseInNodeContext(node, data, datalen, options, (xmlNode **)lst);
+}
 */
 import "C"
 import (
@@ -1886,7 +1890,7 @@ func XMLParseInNodeContext(n PtrSource, data string, o int) (uintptr, error) {
 	var ret C.xmlNodePtr
 	cdata := C.CString(data)
 	defer C.free(unsafe.Pointer(cdata))
-	if C.xmlParseInNodeContext(nptr, cdata, C.int(len(data)), C.int(o), &ret) != 0 {
+	if C.MY_xmlParseInNodeContext(nptr, cdata, C.int(len(data)), C.int(o), &ret) != 0 {
 		return 0, errors.New("XXX PLACE HOLDER XXX")
 	}
 
