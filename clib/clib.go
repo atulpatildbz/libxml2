@@ -492,7 +492,9 @@ func stringToXMLChar(s string) *C.xmlChar {
 }
 
 func XMLSchemaParseFromFile(path string) (uintptr, error) {
-	parserCtx := C.xmlSchemaNewParserCtxt(C.CString(path))
+	cpath := C.CString(path)
+	defer C.free(unsafe.Pointer(cpath))
+	parserCtx := C.xmlSchemaNewParserCtxt(cpath)
 	if parserCtx == nil {
 		return 0, errors.New("failed to create parser")
 	}
@@ -2138,6 +2140,9 @@ func XMLSchemaParse(buf []byte, options ...option.Interface) (uintptr, error) {
 	if docctx == nil {
 		return 0, errors.New("error creating doc parser")
 	}
+	// The parsed document does not depend on docctx, so docctx can be freed on
+	// every path.
+	defer C.xmlFreeParserCtxt(docctx)
 
 	var curi *C.char
 	if uri != "" {
@@ -2157,14 +2162,19 @@ func XMLSchemaParse(buf []byte, options ...option.Interface) (uintptr, error) {
 			xmlCtxtLastErrorRaw(uintptr(unsafe.Pointer(docctx))))
 	}
 
+	// xmlSchemaNewDocParserCtxt does not take ownership of doc. On success the
+	// schema keeps a reference to it (s.doc with s.preserve set), so it must
+	// stay alive until XMLSchemaFree frees it. On failure, free it here.
 	parserCtx := C.xmlSchemaNewDocParserCtxt((*C.xmlDoc)(unsafe.Pointer(doc)))
 	if parserCtx == nil {
+		C.xmlFreeDoc(doc)
 		return 0, errors.New("failed to create parser")
 	}
 	defer C.xmlSchemaFreeParserCtxt(parserCtx)
 
 	s := C.xmlSchemaParse(parserCtx)
 	if s == nil {
+		C.xmlFreeDoc(doc)
 		return 0, errors.New("failed to parse schema")
 	}
 
@@ -2226,7 +2236,17 @@ func XMLSchemaFree(s PtrSource) error {
 		return err
 	}
 
+	// A schema built from a caller-owned document (see XMLSchemaParse) has
+	// preserve set, and xmlSchemaFree leaves that document alone. Free it
+	// after the schema, which still references it.
+	var doc *C.xmlDoc
+	if sptr.preserve != 0 {
+		doc = sptr.doc
+	}
 	C.xmlSchemaFree(sptr)
+	if doc != nil {
+		C.xmlFreeDoc(doc)
+	}
 	return nil
 }
 
