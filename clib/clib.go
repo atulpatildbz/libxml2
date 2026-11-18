@@ -2170,9 +2170,8 @@ func XMLSchemaParse(buf []byte, options ...option.Interface) (uintptr, error) {
 		C.xmlFreeDoc(doc)
 		return 0, errors.New("failed to create parser")
 	}
-	defer C.xmlSchemaFreeParserCtxt(parserCtx)
-
 	s := C.xmlSchemaParse(parserCtx)
+	C.xmlSchemaFreeParserCtxt(parserCtx)
 	if s == nil {
 		C.xmlFreeDoc(doc)
 		return 0, errors.New("failed to parse schema")

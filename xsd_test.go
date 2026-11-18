@@ -243,3 +243,59 @@ func TestGHIssue67(t *testing.T) {
 		t.Logf("%s", doc.String())
 	})
 }
+
+const testSchema = `<?xml version="1.0"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="a">
+    <xs:complexType><xs:attribute name="v" type="xs:int" use="required"/></xs:complexType>
+  </xs:element>
+</xs:schema>`
+
+func TestXSDParseAndFree(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema.xsd")
+	if !assert.NoError(t, os.WriteFile(path, []byte(testSchema), 0o600), "write schema") {
+		return
+	}
+	parsers := map[string]func() (*xsd.Schema, error){
+		"Parse":         func() (*xsd.Schema, error) { return xsd.Parse([]byte(testSchema)) },
+		"ParseFromFile": func() (*xsd.Schema, error) { return xsd.ParseFromFile(path) },
+	}
+	for name, parse := range parsers {
+		t.Run(name, func(t *testing.T) {
+			s, err := parse()
+			if !assert.NoError(t, err, "parse schema") {
+				return
+			}
+			defer s.Free()
+
+			good, err := libxml2.ParseString(`<a v="1"/>`)
+			if !assert.NoError(t, err, "parse document") {
+				return
+			}
+			defer good.Free()
+			assert.NoError(t, s.Validate(good), "valid document")
+
+			bad, err := libxml2.ParseString(`<a v="x"/>`)
+			if !assert.NoError(t, err, "parse document") {
+				return
+			}
+			defer bad.Free()
+			assert.Error(t, s.Validate(bad), "invalid document")
+		})
+	}
+}
+
+func TestXSDParseErrors(t *testing.T) {
+	inputs := map[string]string{
+		"not XML":            "not xml",
+		"XML but not schema": `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:bogus/></xs:schema>`,
+	}
+	for name, input := range inputs {
+		t.Run(name, func(t *testing.T) {
+			_, err := xsd.Parse([]byte(input))
+			assert.Error(t, err)
+		})
+	}
+	_, err := xsd.ParseFromFile(filepath.Join(t.TempDir(), "missing.xsd"))
+	assert.Error(t, err, "missing file")
+}
